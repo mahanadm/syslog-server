@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-950">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Syslog Server</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="/static/app.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .log-row { font-family: 'Consolas', 'Courier New', monospace; font-size: 0.78rem; }
+    .sev-0 { background-color: #7f1d1d; color: #fca5a5; }
+    .sev-1 { background-color: #7c2d12; color: #fdba74; }
+    .sev-2 { background-color: #831843; color: #f9a8d4; }
+    .sev-3 { background-color: #1e3a5f; color: #93c5fd; }
+    .sev-4 { background-color: #1c3a2b; color: #6ee7b7; }
+    .sev-5 { background-color: #1e293b; color: #94a3b8; }
+    .sev-6 { background-color: #1e293b; color: #cbd5e1; }
+    .sev-7 { background-color: #1e293b; color: #64748b; }
+  </style>
+</head>
+<body class="h-full text-gray-100" x-data="syslogApp()" x-init="init()" x-cloak>
+
+  <!-- Header -->
+  <header class="bg-gray-900 border-b border-gray-700 px-6 py-3 flex items-center gap-6">
+    <h1 class="text-lg font-bold text-blue-400 whitespace-nowrap">&#9632; Syslog Server</h1>
+    <nav class="flex gap-1">
+      <template x-for="tab in tabs" :key="tab.id">
+        <button
+          @click="activeTab = tab.id"
+          :class="activeTab === tab.id
+            ? 'bg-blue-600 text-white'
+            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'"
+          class="px-4 py-1.5 rounded text-sm font-medium transition-colors">
+          <span x-text="tab.label"></span>
+          <span x-show="tab.id === 'live' && liveCount > 0"
+            class="ml-1.5 bg-blue-500 text-white text-xs rounded-full px-1.5 py-0.5"
+            x-text="liveCount"></span>
+        </button>
+      </template>
+    </nav>
+    <div class="ml-auto flex items-center gap-3 text-xs text-gray-400">
+      <span :class="wsConnected ? 'text-green-400' : 'text-red-400'">
+        &#9679; <span x-text="wsConnected ? 'Live' : 'Disconnected'"></span>
+      </span>
+      <span x-text="statsBar"></span>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main class="flex flex-col" style="height: calc(100vh - 53px);">
+
+    <!-- LIVE TAB -->
+    <div x-show="activeTab === 'live'" class="flex flex-col h-full">
+      <div class="flex items-center gap-3 px-4 py-2 bg-gray-900 border-b border-gray-700 text-xs">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" x-model="autoScroll" class="accent-blue-500" />
+          <span class="text-gray-300">Auto-scroll</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" x-model="livePaused" class="accent-yellow-500" />
+          <span class="text-gray-300">Pause</span>
+        </label>
+        <!-- Time range selector -->
+        <div class="flex items-center gap-1.5">
+          <span class="text-gray-400">Show:</span>
+          <select x-model="liveTimeRange" @change="onTimeRangeChange()"
+            class="bg-gray-800 border border-gray-600 rounded px-2 py-0.5 text-gray-200">
+            <option value="live">Live only</option>
+            <option value="15m">Last 15 minutes</option>
+            <option value="1h">Last 1 hour</option>
+            <option value="6h">Last 6 hours</option>
+            <option value="24h">Last 24 hours</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+        <select x-model="liveMinSev" class="bg-gray-800 border border-gray-600 rounded px-2 py-0.5 text-gray-200">
+          <option value="-1">All severities</option>
+          <option value="0">0 Emergency+</option>
+          <option value="1">1 Alert+</option>
+          <option value="2">2 Critical+</option>
+          <option value="3">3 Error+</option>
+          <option value="4">4 Warning+</option>
+          <option value="5">5 Notice+</option>
+          <option value="6">6 Info+</option>
+        </select>
+        <input x-model="liveIpFilter" placeholder="Filter IP…"
+          class="bg-gray-800 border border-gray-600 rounded px-2 py-0.5 w-32 text-gray-200" />
+        <span x-show="historyLoading" class="text-yellow-400 animate-pulse">Loading history…</span>
+        <button @click="clearLive()"
+          class="ml-auto text-gray-400 hover:text-red-400 transition-colors">Clear</button>
+        <span class="text-gray-500" x-text="filteredLiveMessages.length + ' rows'"></span>
+      </div>
+      <!-- Historical data banner -->
+      <div x-show="historicalCount > 0 && !historyLoading"
+        class="flex items-center gap-2 px-4 py-1 bg-yellow-900/30 border-b border-yellow-700/40 text-xs text-yellow-300">
+        <span>&#9679;</span>
+        <span x-text="historicalCount.toLocaleString() + ' historical messages loaded (dimmed) · live stream continues below'"></span>
+        <button @click="clearHistory()" class="ml-auto text-yellow-400 hover:text-yellow-200">Dismiss history</button>
+      </div>
+      <div class="overflow-auto flex-1" id="live-scroll">
+        <table class="w-full border-collapse">
+          <thead class="sticky top-0 bg-gray-900 z-10">
+            <tr class="text-left text-xs text-gray-400 border-b border-gray-700">
+              <th class="px-2 py-1 w-36">Time</th>
+              <th class="px-2 py-1 w-28">Source IP</th>
+              <th class="px-2 py-1 w-20">Severity</th>
+              <th class="px-2 py-1 w-24">App</th>
+              <th class="px-2 py-1">Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(msg, i) in filteredLiveMessages" :key="i">
+              <tr :class="'log-row sev-' + msg.severity + ' border-b border-gray-800/50 hover:brightness-125'
+                          + (msg._historical ? ' opacity-60' : '')">
+                <td class="px-2 py-0.5 whitespace-nowrap">
+                  <span x-show="msg._historical" class="text-yellow-600 mr-1" title="Historical">&#9650;</span>
+                  <span x-text="msg.received_at ? msg.received_at.substring(0,19).replace('T',' ') : ''"></span>
+                </td>
+                <td class="px-2 py-0.5 whitespace-nowrap" x-text="msg.source_ip"></td>
+                <td class="px-2 py-0.5 whitespace-nowrap font-semibold" x-text="msg.severity_name"></td>
+                <td class="px-2 py-0.5 whitespace-nowrap truncate max-w-xs" x-text="msg.app_name || ''"></td>
+                <td class="px-2 py-0.5 break-all" x-text="msg.message"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div x-show="filteredLiveMessages.length === 0"
+          class="text-center text-gray-500 py-16 text-sm">
+          Waiting for syslog messages…
+        </div>
+      </div>
+    </div>
+
+    <!-- SEARCH TAB -->
+    <div x-show="activeTab === 'search'" class="flex flex-col h-full">
+      <form @submit.prevent="runSearch()" class="flex flex-wrap gap-2 px-4 py-2 bg-gray-900 border-b border-gray-700 text-xs items-end">
+        <div class="flex flex-col gap-1">
+          <label class="text-gray-400">Keyword</label>
+          <input x-model="search.keyword" placeholder="full-text search…"
+            class="bg-gray-800 border border-gray-600 rounded px-2 py-1 w-44 text-gray-200" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-gray-400">Source IP</label>
+          <input x-model="search.source_ip" placeholder="192.168.x.x"
+            class="bg-gray-800 border border-gray-600 rounded px-2 py-1 w-32 text-gray-200" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-gray-400">Min Severity</label>
+          <select x-model="search.min_severity" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-200">
+            <option value="">Any</option>
+            <option value="0">0 Emergency</option>
+            <option value="1">1 Alert</option>
+            <option value="2">2 Critical</option>
+            <option value="3">3 Error</option>
+            <option value="4">4 Warning</option>
+            <option value="5">5 Notice</option>
+            <option value="6">6 Info</option>
+            <option value="7">7 Debug</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-gray-400">Max Severity</label>
+          <select x-model="search.max_severity" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-200">
+            <option value="">Any</option>
+            <option value="0">0 Emergency</option>
+            <option value="1">1 Alert</option>
+            <option value="2">2 Critical</option>
+            <option value="3">3 Error</option>
+            <option value="4">4 Warning</option>
+            <option value="5">5 Notice</option>
+            <option value="6">6 Info</option>
+            <option value="7">7 Debug</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-gray-400">Start</label>
+          <input type="datetime-local" x-model="search.start_time"
+            class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-200" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-gray-400">End</label>
+          <input type="datetime-local" x-model="search.end_time"
+            class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-200" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-gray-400">Limit</label>
+          <select x-model="search.limit" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-200">
+            <option value="200">200</option>
+            <option value="500">500</option>
+            <option value="1000">1000</option>
+            <option value="2000">2000</option>
+          </select>
+        </div>
+        <button type="submit"
+          class="bg-blue-600 hover:bg-blue-500 text-white rounded px-4 py-1 font-medium transition-colors">
+          Search
+        </button>
+        <button type="button" @click="exportSearchCsv()"
+          class="bg-gray-700 hover:bg-gray-600 text-gray-200 rounded px-3 py-1 transition-colors">
+          Export CSV
+        </button>
+        <span class="text-gray-500 self-center" x-show="searchResults.length > 0"
+          x-text="searchResults.length + ' results'"></span>
+        <span class="text-gray-500 self-center" x-show="searchLoading">Searching…</span>
+      </form>
+      <div class="overflow-auto flex-1">
+        <table class="w-full border-collapse">
+          <thead class="sticky top-0 bg-gray-900 z-10">
+            <tr class="text-left text-xs text-gray-400 border-b border-gray-700">
+              <th class="px-2 py-1 w-36">Time</th>
+              <th class="px-2 py-1 w-28">Source IP</th>
+              <th class="px-2 py-1 w-20">Severity</th>
+              <th class="px-2 py-1 w-24">App</th>
+              <th class="px-2 py-1">Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(msg, i) in searchResults" :key="i">
+              <tr :class="'log-row sev-' + msg.severity + ' border-b border-gray-800/50 hover:brightness-125'">
+                <td class="px-2 py-0.5 whitespace-nowrap" x-text="msg.timestamp ? msg.timestamp.substring(0,19).replace('T',' ') : ''"></td>
+                <td class="px-2 py-0.5 whitespace-nowrap" x-text="msg.source_ip"></td>
+                <td class="px-2 py-0.5 whitespace-nowrap font-semibold" x-text="severityName(msg.severity)"></td>
+                <td class="px-2 py-0.5 whitespace-nowrap truncate max-w-xs" x-text="msg.app_name || ''"></td>
+                <td class="px-2 py-0.5 break-all" x-text="msg.message"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div x-show="searchResults.length === 0 && !searchLoading"
+          class="text-center text-gray-500 py-16 text-sm">Use the filters above and click Search.</div>
+      </div>
+    </div>
+
+    <!-- DEVICES TAB -->
+    <div x-show="activeTab === 'devices'" class="overflow-auto h-full">
+      <div class="px-4 py-2 bg-gray-900 border-b border-gray-700 flex items-center gap-3">
+        <span class="text-xs text-gray-400" x-text="devices.length + ' devices'"></span>
+        <button @click="loadDevices()" class="text-xs text-blue-400 hover:text-blue-300">Refresh</button>
+      </div>
+      <table class="w-full border-collapse text-sm">
+        <thead class="sticky top-0 bg-gray-900">
+          <tr class="text-left text-xs text-gray-400 border-b border-gray-700">
+            <th class="px-4 py-2">Color</th>
+            <th class="px-4 py-2">IP Address</th>
+            <th class="px-4 py-2">Display Name</th>
+            <th class="px-4 py-2">Hostname</th>
+            <th class="px-4 py-2">Vendor</th>
+            <th class="px-4 py-2">Messages</th>
+            <th class="px-4 py-2">Last Seen</th>
+            <th class="px-4 py-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="dev in devices" :key="dev.id">
+            <tr class="border-b border-gray-800 hover:bg-gray-800/50">
+              <td class="px-4 py-2">
+                <div class="w-6 h-6 rounded-full border border-gray-600"
+                  :style="'background-color:' + (dev.color || '#6b7280')"></div>
+              </td>
+              <td class="px-4 py-2 font-mono text-blue-300" x-text="dev.ip_address"></td>
+              <td class="px-4 py-2">
+                <input x-show="editingDevice === dev.id" x-model="dev.display_name"
+                  class="bg-gray-700 border border-gray-500 rounded px-2 py-0.5 w-36 text-sm" />
+                <span x-show="editingDevice !== dev.id" x-text="dev.display_name || '—'"></span>
+              </td>
+              <td class="px-4 py-2 text-gray-400" x-text="dev.hostname || '—'"></td>
+              <td class="px-4 py-2">
+                <input x-show="editingDevice === dev.id" x-model="dev.vendor"
+                  class="bg-gray-700 border border-gray-500 rounded px-2 py-0.5 w-28 text-sm" />
+                <span x-show="editingDevice !== dev.id" x-text="dev.vendor || '—'"></span>
+              </td>
+              <td class="px-4 py-2 text-gray-300" x-text="dev.message_count?.toLocaleString()"></td>
+              <td class="px-4 py-2 text-gray-400 text-xs"
+                x-text="dev.last_seen ? dev.last_seen.substring(0,19).replace('T',' ') : '—'"></td>
+              <td class="px-4 py-2">
+                <template x-if="editingDevice === dev.id">
+                  <div class="flex gap-2">
+                    <button @click="saveDevice(dev)"
+                      class="text-xs bg-blue-600 hover:bg-blue-500 text-white rounded px-2 py-0.5">Save</button>
+                    <button @click="editingDevice = null"
+                      class="text-xs text-gray-400 hover:text-gray-200">Cancel</button>
+                  </div>
+                </template>
+                <template x-if="editingDevice !== dev.id">
+                  <button @click="editingDevice = dev.id"
+                    class="text-xs text-blue-400 hover:text-blue-300">Edit</button>
+                </template>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div x-show="devices.length === 0" class="text-center text-gray-500 py-16 text-sm">
+        No devices seen yet. Send a syslog message to get started.
+      </div>
+    </div>
+
+    <!-- STATS TAB -->
+    <div x-show="activeTab === 'stats'" class="overflow-auto h-full p-4" x-data="statsTab()">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <template x-for="card in cards" :key="card.label">
+          <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <div class="text-xs text-gray-400 mb-1" x-text="card.label"></div>
+            <div class="text-2xl font-bold text-blue-300" x-text="card.value"></div>
+          </div>
+        </template>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <h3 class="text-sm font-medium text-gray-300 mb-3">Messages by Severity</h3>
+          <canvas id="sevChart" height="200"></canvas>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <h3 class="text-sm font-medium text-gray-300 mb-3">Top Devices</h3>
+          <table class="w-full text-sm">
+            <thead><tr class="text-xs text-gray-400 border-b border-gray-700">
+              <th class="text-left py-1">IP</th>
+              <th class="text-left py-1">Name</th>
+              <th class="text-right py-1">Messages</th>
+            </tr></thead>
+            <tbody>
+              <template x-for="d in topDevices" :key="d.source_ip">
+                <tr class="border-b border-gray-700/50">
+                  <td class="py-1 font-mono text-blue-300 text-xs" x-text="d.source_ip"></td>
+                  <td class="py-1 text-gray-300 text-xs" x-text="d.display_name || d.source_ip"></td>
+                  <td class="py-1 text-right text-gray-200" x-text="d.count?.toLocaleString()"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <h3 class="text-sm font-medium text-gray-300 mb-3">Listener Status</h3>
+          <table class="w-full text-sm">
+            <tbody>
+              <template x-for="(l, name) in listeners" :key="name">
+                <tr class="border-b border-gray-700/50">
+                  <td class="py-1 text-gray-400 uppercase text-xs" x-text="name"></td>
+                  <td class="py-1">
+                    <span :class="l.active ? 'text-green-400' : 'text-red-400'" class="text-xs font-medium"
+                      x-text="l.active ? 'Active' : 'Inactive'"></span>
+                  </td>
+                  <td class="py-1 text-gray-400 text-xs font-mono" x-text="l.host + ':' + l.port"></td>
+                  <td class="py-1 text-right text-gray-300 text-xs" x-text="l.message_count?.toLocaleString() + ' msgs'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS TAB -->
+    <div x-show="activeTab === 'settings'" class="overflow-auto h-full p-6">
+      <div class="max-w-2xl space-y-6" x-data="settingsTab()">
+        <div class="bg-gray-800 rounded-lg p-5 border border-gray-700">
+          <h3 class="text-sm font-semibold text-gray-200 mb-4">UDP Listener</h3>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <label class="flex items-center gap-2 col-span-2">
+              <input type="checkbox" x-model="cfg.listeners.udp.enabled" class="accent-blue-500" />
+              <span class="text-gray-300">Enabled</span>
+            </label>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">Port</label>
+              <input type="number" x-model.number="cfg.listeners.udp.port"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">Bind Host</label>
+              <input x-model="cfg.listeners.udp.host"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg p-5 border border-gray-700">
+          <h3 class="text-sm font-semibold text-gray-200 mb-4">TCP Listener</h3>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <label class="flex items-center gap-2 col-span-2">
+              <input type="checkbox" x-model="cfg.listeners.tcp.enabled" class="accent-blue-500" />
+              <span class="text-gray-300">Enabled</span>
+            </label>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">Port</label>
+              <input type="number" x-model.number="cfg.listeners.tcp.port"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg p-5 border border-gray-700">
+          <h3 class="text-sm font-semibold text-gray-200 mb-4">Storage</h3>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div class="flex flex-col gap-1 col-span-2">
+              <label class="text-gray-400 text-xs">Retention (days, 0 = keep forever)</label>
+              <input type="number" x-model.number="cfg.storage.retention_days"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200 w-32" />
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg p-5 border border-gray-700">
+          <h3 class="text-sm font-semibold text-gray-200 mb-4">Web Server</h3>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">Port (restart required)</label>
+              <input type="number" x-model.number="cfg.web.port"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg p-5 border border-gray-700">
+          <h3 class="text-sm font-semibold text-gray-200 mb-1">NTP Server</h3>
+          <p class="text-xs text-gray-500 mb-4">Allows network devices to synchronise their clocks with this server, ensuring all timestamps are consistent.</p>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <label class="flex items-center gap-2 col-span-2">
+              <input type="checkbox" x-model="cfg.ntp.enabled" class="accent-blue-500" />
+              <span class="text-gray-300">Enabled</span>
+            </label>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">Port</label>
+              <input type="number" x-model.number="cfg.ntp.port"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+              <span class="text-xs text-yellow-500/80">Port 123 requires admin / root privileges</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">Bind Host</label>
+              <input x-model="cfg.ntp.host"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-3">
+          <button @click="saveSettings()"
+            class="bg-blue-600 hover:bg-blue-500 text-white rounded px-6 py-2 text-sm font-medium transition-colors">
+            Save Settings
+          </button>
+          <span x-show="saveMsg" x-text="saveMsg"
+            class="text-green-400 text-sm self-center"></span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+</body>
+</html>
