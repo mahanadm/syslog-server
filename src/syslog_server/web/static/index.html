@@ -461,10 +461,15 @@
               <input x-model="cfg.email.smtp_user" autocomplete="off"
                 class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
             </div>
-            <div class="flex flex-col gap-1">
+            <div class="flex flex-col gap-1" x-data="{ showPw: false }">
               <label class="text-gray-400 text-xs">Password</label>
-              <input type="password" x-model="cfg.email.smtp_password" autocomplete="new-password"
-                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+              <div class="relative">
+                <input :type="showPw ? 'text' : 'password'" x-model="cfg.email.smtp_password" autocomplete="new-password"
+                  class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 pr-10 text-gray-200 w-full" />
+                <button type="button" @click="showPw = !showPw"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs select-none"
+                  x-text="showPw ? 'Hide' : 'Show'"></button>
+              </div>
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-gray-400 text-xs">From Address</label>
