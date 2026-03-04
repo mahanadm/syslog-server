@@ -148,8 +148,13 @@ class DatabaseManager:
         cursor = self._conn.execute("SELECT id, ip_address FROM devices")
         self._device_cache = {row["ip_address"]: row["id"] for row in cursor}
 
-    def _get_or_create_device(self, source_ip: str, hostname: str | None = None) -> int:
-        """Get device ID for an IP, creating the device if it doesn't exist."""
+    def _get_or_create_device(
+        self, source_ip: str, hostname: str | None = None, new_ips: set[str] | None = None
+    ) -> int:
+        """Get device ID for an IP, creating the device if it doesn't exist.
+
+        If *new_ips* is provided and this IP is newly inserted, adds it to the set.
+        """
         if source_ip in self._device_cache:
             return self._device_cache[source_ip]
 
@@ -161,18 +166,24 @@ class DatabaseManager:
         )
         device_id = cursor.lastrowid
         self._device_cache[source_ip] = device_id
+        if new_ips is not None:
+            new_ips.add(source_ip)
         return device_id
 
-    def insert_batch(self, messages: list[SyslogMessage]) -> None:
-        """Insert a batch of syslog messages efficiently."""
+    def insert_batch(self, messages: list[SyslogMessage]) -> list[str]:
+        """Insert a batch of syslog messages efficiently.
+
+        Returns a list of source IPs that were seen for the first time in this batch.
+        """
         if not messages or not self._conn:
-            return
+            return []
 
         rows = []
         device_updates: dict[int, tuple[str, int]] = {}  # device_id -> (last_seen, count)
+        new_ips: set[str] = set()
 
         for msg in messages:
-            device_id = self._get_or_create_device(msg.source_ip, msg.hostname)
+            device_id = self._get_or_create_device(msg.source_ip, msg.hostname, new_ips)
 
             rows.append((
                 msg.timestamp.isoformat(),
@@ -219,6 +230,7 @@ class DatabaseManager:
             )
 
         self._conn.commit()
+        return list(new_ips)
 
     def search(
         self,

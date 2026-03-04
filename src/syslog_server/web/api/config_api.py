@@ -7,7 +7,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from syslog_server.app import get_config, get_listener_manager, get_ntp_server
+from syslog_server.alerts.email_notifier import EmailNotifier
+from syslog_server.app import get_config, get_email_notifier, get_listener_manager, get_ntp_server
 from syslog_server.core.config import ConfigManager
 from syslog_server.network.listener_manager import ListenerManager
 from syslog_server.network.ntp_server import NtpServer
@@ -52,6 +53,18 @@ async def update_config(
             except Exception:
                 logger.exception("Failed to restart NTP server after config update")
 
+    return {"ok": True}
+
+
+@router.post("/config/test-email")
+def test_email(
+    config: ConfigManager = Depends(get_config),
+    email_notifier: EmailNotifier = Depends(get_email_notifier),
+):
+    """Send a test email using the current SMTP configuration."""
+    error = email_notifier.send_test_email(config)
+    if error:
+        return {"ok": False, "error": error}
     return {"ok": True}
 
 

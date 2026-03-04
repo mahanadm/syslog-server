@@ -321,8 +321,38 @@ function settingsTab() {
       storage: { retention_days: 0 },
       web: { port: 8080 },
       ntp: { enabled: false, host: '0.0.0.0', port: 123 },
+      email: {
+        enabled: false,
+        smtp_host: '',
+        smtp_port: 587,
+        smtp_user: '',
+        smtp_password: '',
+        use_tls: true,
+        from_address: '',
+        recipients: [],
+        recipients_text: '',   // UI-only: newline-separated list
+      },
+      email_alerts: {
+        link_state: true,
+        spanning_tree: true,
+        login_failure: true,
+        login_failure_threshold: 3,
+        login_failure_window_secs: 300,
+        new_device: true,
+        config_change: true,
+        power_supply: true,
+        high_temperature: true,
+        ntp_sync_failure: true,
+        device_reboot: true,
+        port_security: true,
+        fan_failure: true,
+        sfp_alarm: true,
+        cooldown_minutes: 15,
+      },
     },
     saveMsg: '',
+    testEmailMsg: '',
+    testEmailOk: true,
 
     async init() {
       try {
@@ -335,21 +365,56 @@ function settingsTab() {
         if (data.storage) Object.assign(this.cfg.storage, data.storage);
         if (data.web) Object.assign(this.cfg.web, data.web);
         if (data.ntp) Object.assign(this.cfg.ntp, data.ntp);
+        if (data.email) {
+          Object.assign(this.cfg.email, data.email);
+          // Convert recipients array -> textarea text
+          const recip = data.email.recipients;
+          this.cfg.email.recipients_text = Array.isArray(recip) ? recip.join('\n') : '';
+        }
+        if (data.email_alerts) Object.assign(this.cfg.email_alerts, data.email_alerts);
       } catch (_) {}
     },
 
     async saveSettings() {
       try {
+        // Build payload: convert recipients_text -> recipients array, exclude UI-only field
+        const payload = JSON.parse(JSON.stringify(this.cfg));
+        payload.email.recipients = payload.email.recipients_text
+          .split('\n')
+          .map(s => s.trim())
+          .filter(s => s.length > 0);
+        delete payload.email.recipients_text;
+
         await fetch('/api/config', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.cfg),
+          body: JSON.stringify(payload),
         });
         this.saveMsg = 'Saved!';
         setTimeout(() => { this.saveMsg = ''; }, 3000);
       } catch (e) {
         this.saveMsg = 'Error saving.';
       }
+    },
+
+    async testEmail() {
+      this.testEmailMsg = 'Sending…';
+      this.testEmailOk = true;
+      try {
+        const r = await fetch('/api/config/test-email', { method: 'POST' });
+        const data = await r.json();
+        if (data.ok) {
+          this.testEmailMsg = 'Test email sent!';
+          this.testEmailOk = true;
+        } else {
+          this.testEmailMsg = data.error || 'Failed to send.';
+          this.testEmailOk = false;
+        }
+      } catch (e) {
+        this.testEmailMsg = 'Request failed.';
+        this.testEmailOk = false;
+      }
+      setTimeout(() => { this.testEmailMsg = ''; }, 6000);
     },
   };
 }

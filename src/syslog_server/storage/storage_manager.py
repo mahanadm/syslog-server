@@ -48,11 +48,15 @@ class StorageManager:
         if self._file_writer:
             self._file_writer.close()
 
-    def write_batch(self, messages: list[SyslogMessage]) -> None:
-        """Write a batch of messages to both database and log files."""
+    def write_batch(self, messages: list[SyslogMessage]) -> list[str]:
+        """Write a batch of messages to both database and log files.
+
+        Returns a list of source IPs that were seen for the first time in this batch.
+        """
+        new_ips: list[str] = []
         # Write to database
         try:
-            self._db.insert_batch(messages)
+            new_ips = self._db.insert_batch(messages)
         except Exception:
             logger.exception("Database write failed for batch of %d messages", len(messages))
 
@@ -62,6 +66,8 @@ class StorageManager:
                 self._file_writer.write_batch(messages)
             except Exception:
                 logger.exception("File write failed for batch of %d messages", len(messages))
+
+        return new_ips
 
     def cleanup(self) -> None:
         """Run retention cleanup if configured."""

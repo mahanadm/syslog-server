@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from syslog_server.alerts.alert_engine import AlertEngine
+from syslog_server.alerts.email_notifier import EmailNotifier
 from syslog_server.alerts.notifier import Notifier
 from syslog_server.core.config import ConfigManager
 from syslog_server.core.dispatcher import MessageDispatcher
@@ -38,6 +39,7 @@ _dispatcher: MessageDispatcher | None = None
 _listener_manager: ListenerManager | None = None
 _broadcaster: WebSocketBroadcaster | None = None
 _notifier: Notifier | None = None
+_email_notifier: EmailNotifier | None = None
 _ntp_server: NtpServer | None = None
 
 
@@ -71,6 +73,11 @@ def get_notifier() -> Notifier:
     return _notifier
 
 
+def get_email_notifier() -> EmailNotifier:
+    assert _email_notifier is not None
+    return _email_notifier
+
+
 def get_ntp_server() -> NtpServer:
     assert _ntp_server is not None
     return _ntp_server
@@ -82,7 +89,7 @@ def get_ntp_server() -> NtpServer:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _config, _storage, _dispatcher, _listener_manager, _broadcaster, _notifier, _ntp_server
+    global _config, _storage, _dispatcher, _listener_manager, _broadcaster, _notifier, _email_notifier, _ntp_server
 
     logger.info("Starting Syslog Server")
 
@@ -108,6 +115,9 @@ async def lifespan(app: FastAPI):
     # Notifier (in-memory alert history, no desktop notifications)
     _notifier = Notifier()
 
+    # Email notifier (background SMTP sender thread)
+    _email_notifier = EmailNotifier()
+
     # WebSocket broadcaster
     _broadcaster = WebSocketBroadcaster()
 
@@ -117,6 +127,8 @@ async def lifespan(app: FastAPI):
         storage=_storage,
         alert_engine=alert_engine,
         notifier=_notifier,
+        email_notifier=_email_notifier,
+        config=_config,
         batch_size=_config.batch_size,
         batch_timeout_ms=_config.batch_timeout_ms,
     )
@@ -149,6 +161,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down...")
     _ntp_server.stop()
+    _email_notifier.stop()
     _listener_manager.stop()
     _dispatcher.stop()
     _dispatcher.join(timeout=5.0)

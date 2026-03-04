@@ -100,6 +100,33 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "host": "0.0.0.0",
         "port": 123,
     },
+    "email": {
+        "enabled": False,
+        "smtp_host": "",
+        "smtp_port": 587,
+        "smtp_user": "",
+        "smtp_password": "",
+        "use_tls": True,
+        "from_address": "",
+        "recipients": [],
+    },
+    "email_alerts": {
+        "link_state": True,
+        "spanning_tree": True,
+        "login_failure": True,
+        "login_failure_threshold": 3,
+        "login_failure_window_secs": 300,
+        "new_device": True,
+        "config_change": True,
+        "power_supply": True,
+        "high_temperature": True,
+        "ntp_sync_failure": True,
+        "device_reboot": True,
+        "port_security": True,
+        "fan_failure": True,
+        "sfp_alarm": True,
+        "cooldown_minutes": 15,
+    },
 }
 
 

@@ -13,7 +13,9 @@ from syslog_server.core.message_queue import MessageQueue
 
 if TYPE_CHECKING:
     from syslog_server.alerts.alert_engine import AlertEngine
+    from syslog_server.alerts.email_notifier import EmailNotifier
     from syslog_server.alerts.notifier import Notifier
+    from syslog_server.core.config import ConfigManager
     from syslog_server.storage.storage_manager import StorageManager
     from syslog_server.web.broadcaster import WebSocketBroadcaster
 
@@ -33,6 +35,8 @@ class MessageDispatcher(threading.Thread):
         storage: StorageManager,
         alert_engine: AlertEngine | None = None,
         notifier: Notifier | None = None,
+        email_notifier: EmailNotifier | None = None,
+        config: ConfigManager | None = None,
         batch_size: int = 500,
         batch_timeout_ms: int = 100,
     ):
@@ -41,6 +45,8 @@ class MessageDispatcher(threading.Thread):
         self._storage = storage
         self._alert_engine = alert_engine
         self._notifier = notifier
+        self._email_notifier = email_notifier
+        self._config = config
         self._batch_size = batch_size
         self._batch_timeout = batch_timeout_ms / 1000.0
         self._running = False
@@ -81,9 +87,10 @@ class MessageDispatcher(threading.Thread):
             )
 
             if batch:
-                # Write to storage (DB + files)
+                # Write to storage (DB + files); capture newly-seen device IPs
+                new_ips: list[str] = []
                 try:
-                    self._storage.write_batch(batch)
+                    new_ips = self._storage.write_batch(batch)
                 except Exception:
                     logger.exception("Storage write failed for batch of %d messages", len(batch))
 
@@ -94,12 +101,23 @@ class MessageDispatcher(threading.Thread):
                         self._broadcaster.broadcast(json_batch), self._loop
                     )
 
-                # Evaluate alerts
+                # Evaluate keyword/severity alert rules
                 if self._alert_engine and self._notifier:
                     for msg in batch:
                         triggered = self._alert_engine.evaluate(msg)
                         for rule in triggered:
                             self._notifier.on_alert_triggered(msg, rule)
+
+                # Email alerts — event pattern matching + new device notifications
+                if self._email_notifier and self._config:
+                    for msg in batch:
+                        self._email_notifier.check_message(msg, self._config)
+                    for ip in new_ips:
+                        hostname = next(
+                            (m.hostname for m in batch if m.source_ip == ip and m.hostname),
+                            ip,
+                        )
+                        self._email_notifier.send_new_device_alert(ip, hostname, self._config)
 
                 self._total_processed += len(batch)
 

@@ -437,6 +437,151 @@
           </div>
         </div>
 
+        <!-- Email Settings -->
+        <div class="bg-gray-800 rounded-lg p-5 border border-gray-700">
+          <h3 class="text-sm font-semibold text-gray-200 mb-1">Email Settings</h3>
+          <p class="text-xs text-gray-500 mb-4">Configure SMTP to send email alerts for selected OT switch events.</p>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <label class="flex items-center gap-2 col-span-2">
+              <input type="checkbox" x-model="cfg.email.enabled" class="accent-blue-500" />
+              <span class="text-gray-300">Enable email alerts</span>
+            </label>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">SMTP Host</label>
+              <input x-model="cfg.email.smtp_host" placeholder="smtp.gmail.com"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">SMTP Port</label>
+              <input type="number" x-model.number="cfg.email.smtp_port"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">Username</label>
+              <input x-model="cfg.email.smtp_user" autocomplete="off"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">Password</label>
+              <input type="password" x-model="cfg.email.smtp_password" autocomplete="new-password"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-gray-400 text-xs">From Address</label>
+              <input x-model="cfg.email.from_address" placeholder="syslog@example.com"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200" />
+            </div>
+            <label class="flex items-center gap-2 self-end pb-1.5">
+              <input type="checkbox" x-model="cfg.email.use_tls" class="accent-blue-500" />
+              <span class="text-gray-300 text-xs">Use STARTTLS</span>
+            </label>
+            <div class="flex flex-col gap-1 col-span-2">
+              <label class="text-gray-400 text-xs">Recipients (one per line)</label>
+              <textarea x-model="cfg.email.recipients_text" rows="3" placeholder="ops@example.com&#10;alerts@example.com"
+                class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-gray-200 font-mono text-xs resize-none"></textarea>
+            </div>
+            <div class="col-span-2 flex items-center gap-3">
+              <button @click="testEmail()"
+                class="bg-gray-600 hover:bg-gray-500 text-white rounded px-4 py-1.5 text-xs font-medium transition-colors">
+                Send Test Email
+              </button>
+              <span x-show="testEmailMsg" x-text="testEmailMsg"
+                :class="testEmailOk ? 'text-green-400' : 'text-red-400'"
+                class="text-xs"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Email Alert Events -->
+        <div class="bg-gray-800 rounded-lg p-5 border border-gray-700">
+          <h3 class="text-sm font-semibold text-gray-200 mb-1">Email Alert Events</h3>
+          <p class="text-xs text-gray-500 mb-4">Select which events trigger an email. Alerts are rate-limited by the cooldown period to avoid floods.</p>
+          <div class="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mb-4">
+
+            <!-- Network -->
+            <div class="col-span-2 text-xs font-semibold text-gray-400 uppercase tracking-wide mt-1">Network</div>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.link_state" class="accent-blue-500" />
+              <span class="text-gray-300">Link State Change (Up / Down)</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.spanning_tree" class="accent-blue-500" />
+              <span class="text-gray-300">Spanning Tree / MST Event</span>
+            </label>
+
+            <!-- Security -->
+            <div class="col-span-2 text-xs font-semibold text-gray-400 uppercase tracking-wide mt-1">Security</div>
+            <div class="flex flex-col gap-2">
+              <label class="flex items-center gap-2">
+                <input type="checkbox" x-model="cfg.email_alerts.login_failure" class="accent-blue-500" />
+                <span class="text-gray-300">Failed Login Attempts</span>
+              </label>
+              <div x-show="cfg.email_alerts.login_failure" class="ml-5 flex gap-3 text-xs text-gray-400">
+                <span>≥</span>
+                <input type="number" x-model.number="cfg.email_alerts.login_failure_threshold" min="1" max="100"
+                  class="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-gray-200 w-14 text-center" />
+                <span>failures in</span>
+                <input type="number" x-model.number="cfg.email_alerts.login_failure_window_secs" min="30" max="3600"
+                  class="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-gray-200 w-16 text-center" />
+                <span>seconds</span>
+              </div>
+            </div>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.port_security" class="accent-blue-500" />
+              <span class="text-gray-300">Port Security Violation</span>
+            </label>
+
+            <!-- Device -->
+            <div class="col-span-2 text-xs font-semibold text-gray-400 uppercase tracking-wide mt-1">Device</div>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.new_device" class="accent-blue-500" />
+              <span class="text-gray-300">New / Unknown Device</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.config_change" class="accent-blue-500" />
+              <span class="text-gray-300">Switch Configuration Change</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.device_reboot" class="accent-blue-500" />
+              <span class="text-gray-300">Device Reboot / Restart</span>
+            </label>
+
+            <!-- Hardware -->
+            <div class="col-span-2 text-xs font-semibold text-gray-400 uppercase tracking-wide mt-1">Hardware</div>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.power_supply" class="accent-blue-500" />
+              <span class="text-gray-300">Power Supply Failure</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.fan_failure" class="accent-blue-500" />
+              <span class="text-gray-300">Fan Failure</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.high_temperature" class="accent-blue-500" />
+              <span class="text-gray-300">High Temperature Alarm</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.sfp_alarm" class="accent-blue-500" />
+              <span class="text-gray-300">SFP Optical Power Alarm</span>
+            </label>
+
+            <!-- Time -->
+            <div class="col-span-2 text-xs font-semibold text-gray-400 uppercase tracking-wide mt-1">Time</div>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" x-model="cfg.email_alerts.ntp_sync_failure" class="accent-blue-500" />
+              <span class="text-gray-300">NTP Sync Failure</span>
+            </label>
+          </div>
+
+          <!-- Cooldown -->
+          <div class="flex items-center gap-3 text-sm border-t border-gray-700 pt-4">
+            <label class="text-gray-400 text-xs whitespace-nowrap">Alert cooldown:</label>
+            <input type="number" x-model.number="cfg.email_alerts.cooldown_minutes" min="1" max="1440"
+              class="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-gray-200 w-20 text-sm" />
+            <span class="text-gray-400 text-xs">minutes (per event per device)</span>
+          </div>
+        </div>
+
         <div class="flex gap-3">
           <button @click="saveSettings()"
             class="bg-blue-600 hover:bg-blue-500 text-white rounded px-6 py-2 text-sm font-medium transition-colors">
