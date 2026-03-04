@@ -74,7 +74,7 @@ This will:
 
 **5. Configure your network devices**
 
-Point your switches' syslog destination to `<this-server-IP>:1514` (UDP).
+Point your switches' syslog destination to `<this-server-IP>:514` (UDP).
 Point their NTP server to `<this-server-IP>` (UDP 123).
 
 **6. Open the web UI**
@@ -142,7 +142,7 @@ This will:
 
 **5. Configure your network devices**
 
-Point your switches' syslog destination to `<this-server-IP>:1514` (UDP).
+Point your switches' syslog destination to `<this-server-IP>:514` (UDP).
 
 > **NTP on Linux:** The Linux installer does not configure NTP automatically. If you want this server to also serve NTP, install and configure `chrony` or `ntpsec`:
 > ```bash
@@ -182,7 +182,7 @@ sudo bash uninstall_service.sh
 | Service    | Port      | Protocol | Notes                          |
 |------------|-----------|----------|--------------------------------|
 | Web UI     | 8080      | TCP      | Browser access                 |
-| Syslog UDP | 1514      | UDP      | Configure switches to send here |
+| Syslog UDP | 514       | UDP      | Configure switches to send here |
 | Syslog TCP | disabled  | TCP      | Enable in Settings if needed   |
 | NTP        | 123       | UDP      | Windows Time Service (W32Time) |
 
