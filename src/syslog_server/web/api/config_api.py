@@ -58,11 +58,16 @@ async def update_config(
 
 @router.post("/config/test-email")
 def test_email(
+    body: dict[str, Any] | None = None,
     config: ConfigManager = Depends(get_config),
     email_notifier: EmailNotifier = Depends(get_email_notifier),
 ):
-    """Send a test email using the current SMTP configuration."""
-    error = email_notifier.send_test_email(config)
+    """Send a test email.
+
+    If a JSON body is supplied it is used as the SMTP config directly (lets the
+    UI test without saving first). Falls back to saved config when body is absent.
+    """
+    error = email_notifier.send_test_email(config, override_smtp=body or None)
     if error:
         return {"ok": False, "error": error}
     return {"ok": True}

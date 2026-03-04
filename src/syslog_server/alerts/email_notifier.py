@@ -173,9 +173,15 @@ class EmailNotifier:
         )
         self._enqueue(subject, body, config)
 
-    def send_test_email(self, config: "ConfigManager") -> str:
-        """Send a test email synchronously. Returns empty string on success, error message on failure."""
-        smtp_cfg = config.get("email") or {}
+    def send_test_email(
+        self, config: "ConfigManager", override_smtp: dict | None = None
+    ) -> str:
+        """Send a test email synchronously. Returns empty string on success, error message on failure.
+
+        If *override_smtp* is provided it is used instead of the saved config, allowing
+        the UI to test settings before saving.
+        """
+        smtp_cfg = override_smtp if override_smtp is not None else (config.get("email") or {})
         host = smtp_cfg.get("smtp_host", "")
         if not host:
             return "SMTP host is not configured."
@@ -184,14 +190,15 @@ class EmailNotifier:
         if not recipients:
             return "No recipients configured."
 
+        web_port = config.get("web", "port", default=8080)
         subject = "[Syslog Alert] Test Email"
         body = (
             "This is a test email from your Syslog Server.\n\n"
             "If you received this, email alerts are configured correctly.\n"
-            f"\n---\nSyslog Server | http://localhost:{config.get('web', 'port', default=8080)}\n"
+            f"\n---\nSyslog Server | http://localhost:{web_port}\n"
         )
         try:
-            self._send_smtp(subject, body, config)
+            self._send_smtp_from_cfg(subject, body, smtp_cfg)
             return ""
         except Exception as exc:
             return str(exc)

@@ -401,7 +401,22 @@ function settingsTab() {
       this.testEmailMsg = 'Sending…';
       this.testEmailOk = true;
       try {
-        const r = await fetch('/api/config/test-email', { method: 'POST' });
+        // Pass current form values so the test works before saving
+        const smtpPayload = {
+          smtp_host:     this.cfg.email.smtp_host,
+          smtp_port:     this.cfg.email.smtp_port,
+          smtp_user:     this.cfg.email.smtp_user,
+          smtp_password: this.cfg.email.smtp_password,
+          use_tls:       this.cfg.email.use_tls,
+          from_address:  this.cfg.email.from_address,
+          recipients:    this.cfg.email.recipients_text
+                           .split('\n').map(s => s.trim()).filter(s => s.length > 0),
+        };
+        const r = await fetch('/api/config/test-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(smtpPayload),
+        });
         const data = await r.json();
         if (data.ok) {
           this.testEmailMsg = 'Test email sent!';
