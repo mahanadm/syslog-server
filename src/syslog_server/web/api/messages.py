@@ -23,7 +23,7 @@ def search_messages(
     device_id: Optional[int] = Query(None),
     start_time: Optional[datetime] = Query(None),
     end_time: Optional[datetime] = Query(None),
-    limit: int = Query(200, ge=1, le=2000),
+    limit: int = Query(200, ge=1, le=100000),
     offset: int = Query(0, ge=0),
     storage: StorageManager = Depends(get_storage),
 ):

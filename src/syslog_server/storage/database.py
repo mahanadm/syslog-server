@@ -268,10 +268,10 @@ class DatabaseManager:
             conditions.append("m.device_id = ?")
             params.append(device_id)
         if start_time:
-            conditions.append("m.timestamp >= ?")
+            conditions.append("m.received_at >= ?")
             params.append(start_time.isoformat())
         if end_time:
-            conditions.append("m.timestamp <= ?")
+            conditions.append("m.received_at <= ?")
             params.append(end_time.isoformat())
 
         where = " AND ".join(conditions) if conditions else "1=1"
@@ -280,7 +280,7 @@ class DatabaseManager:
             FROM messages m
             LEFT JOIN devices d ON m.device_id = d.id
             WHERE {where}
-            ORDER BY m.timestamp DESC
+            ORDER BY m.received_at DESC
             LIMIT ? OFFSET ?
         """
         params.extend([limit, offset])

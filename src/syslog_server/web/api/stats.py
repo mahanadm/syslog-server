@@ -36,3 +36,9 @@ def get_stats(
         "total_processed": dispatcher.total_processed,
         "listeners": listener_statuses,
     }
+
+
+@router.get("/health")
+def health_check():
+    """Lightweight health check endpoint for tray manager polling."""
+    return {"status": "ok"}

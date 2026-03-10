@@ -30,7 +30,7 @@ function syslogApp() {
     liveIpFilter: '',
 
     // Time range / history state
-    liveTimeRange: localStorage.getItem('syslog_timeRange') || '1h',
+    liveTimeRange: localStorage.getItem('syslog_timeRange') || 'all',
     historyLoading: false,
     historicalCount: 0,
 
@@ -124,8 +124,11 @@ function syslogApp() {
     async loadHistory() {
       this.historyLoading = true;
       try {
-        const params = new URLSearchParams({ limit: 2000 });
-        if (this.liveTimeRange !== 'all') {
+        const params = new URLSearchParams();
+        if (this.liveTimeRange === 'all') {
+          params.set('limit', 100000);
+        } else {
+          params.set('limit', 2000);
           const mins = TIME_RANGE_MINUTES[this.liveTimeRange];
           const startTime = new Date(Date.now() - mins * 60 * 1000);
           // DB stores timestamps in local time, so strip timezone offset before sending
